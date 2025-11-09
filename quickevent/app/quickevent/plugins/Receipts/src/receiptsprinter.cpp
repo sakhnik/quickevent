@@ -430,7 +430,7 @@ static const std::vector<QByteArray> epson_commands =
 	QByteArray("\033@"),			//    Init
 	QByteArray("\035V\102\x00", 4),	//    Cut
 	QByteArray("\n"),				//    Eoln
-	QByteArray("\033t\x06", 3),		//    SelectCodeTable1251
+	QByteArray("\x1c\x2e\x1b\x52\x00\x1bt\x17", 8),		//    SelectCodeTable1251
 	zelesta_logo
 };
 
