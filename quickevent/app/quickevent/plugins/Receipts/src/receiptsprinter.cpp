@@ -17,6 +17,7 @@
 #include <QFile>
 #if QT_VERSION_MAJOR >= 6
 #include <QStringEncoder>
+#include <iconv.h>
 #else
 #include <QTextCodec>
 #endif
@@ -593,11 +594,61 @@ void ReceiptsPrinter::createPrinterData_helper(const QDomElement &el, DirectPrin
 		print_context->horizontalLayoutNestCount--;
 }
 
+namespace {
+
+// Function to convert a QByteArray (source_encoding) to a QByteArray (target_encoding)
+QByteArray iconv_convert(const QByteArray& sourceData, const char* targetEncoding, const char* sourceEncoding) {
+    iconv_t cd = iconv_open(targetEncoding, sourceEncoding);
+    if (cd == (iconv_t)-1) {
+        // Handle error: conversion not supported or memory error
+        return QByteArray();
+    }
+
+    QByteArray targetBuffer;
+    
+    // Get raw data pointers and sizes
+    char* sourcePtr = const_cast<char*>(sourceData.constData());
+    size_t sourceLen = sourceData.size();
+
+    // Start with a reasonable buffer size (e.g., 2x the source size)
+    size_t targetSize = sourceLen * 2;
+    targetBuffer.resize(targetSize);
+    
+    char* targetPtr = targetBuffer.data();
+    size_t targetLen = targetSize;
+    
+    // Perform conversion
+    size_t converted = iconv(cd, &sourcePtr, &sourceLen, &targetPtr, &targetLen);
+    
+    iconv_close(cd);
+
+    if (converted == (size_t)-1) {
+        // Handle conversion error (e.g., invalid sequence, character not representable)
+        return QByteArray();
+    }
+    
+    // Resize the QByteArray to the actual size of the converted data
+    targetBuffer.resize(targetSize - targetLen);
+    return targetBuffer;
+}
+
+} //namespace;
+
 QByteArray ReceiptsPrinter::encodeText(const QString text, const QString &text_encoding) const
 {
 #if QT_VERSION_MAJOR >= 6
+    if (text_encoding.compare("Windows-1251", Qt::CaseInsensitive) == 0) {
+        QByteArray utf8Data = text.toUtf8();
+        QByteArray result = iconv_convert(utf8Data, "Windows-1251", "UTF-8");
+        
+        if (!result.isEmpty()) {
+            return result;
+        }
+    }
+
 	auto ba = text_encoding.toUtf8();
 	auto enc = QStringConverter::encodingForName(ba.constData());
+	qInfo() << text_encoding << " " << ba << " " << enc;
 	if(enc) {
 		auto from_utf16 = QStringEncoder(enc.value());
 		return from_utf16(text);
@@ -629,7 +680,7 @@ QList<PrintLine> alignPrinterData(DirectPrintContext *print_context, const Recei
 		ret.insert(ret.length(), line);
 
 		const auto & text_encoding = receipts_settings.characterPrinterCodec();
-		if (text_encoding == QLatin1String("cp1251")) {
+		if (text_encoding == QLatin1String("Windows-1251")) {
 			ret.insert(ret.length(), PrintLine{} << PrintData(PrintData::Command::SelectCodeTable1251));
 		}
 	}
